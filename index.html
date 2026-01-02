@@ -338,10 +338,18 @@
         }
         .form-group { margin-bottom: 15px; }
         .form-label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem; }
-        .form-input, .form-textarea {
+        .form-input, .form-textarea, .form-select {
             width: 100%; padding: 10px; border: 1px solid #ccc;
             border-radius: 4px; font-family: 'Prompt'; font-size: 1rem;
         }
+        
+        /* Dynamic Qty Inputs */
+        .qty-dynamic-wrapper {
+            display: flex; gap: 10px; align-items: center;
+            background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #eee;
+        }
+        .qty-unit-label { font-size: 0.9rem; color: #666; white-space: nowrap; }
+
         .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
         .btn { padding: 8px 20px; border-radius: 4px; border: none; cursor: pointer; font-family: 'Prompt'; }
         .btn-primary { background: var(--primary-color); color: white; }
@@ -364,6 +372,7 @@
             h1 { font-size: 20pt; }
             h2 { font-size: 14pt; }
             p { font-size: 12pt; }
+            .qty-dynamic-wrapper { flex-wrap: wrap; }
         }
 
         @media print {
@@ -453,8 +462,20 @@
             </div>
             
             <div class="form-group">
-                <label class="form-label">จำนวน/ปริมาณ (Quantity)</label>
-                <input type="text" id="inp-qty" class="form-input" placeholder="e.g. 3 เซ็ต x 15 ครั้ง">
+                <label class="form-label">รูปแบบปริมาณ (Format)</label>
+                <select id="inp-qty-type" class="form-select" onchange="toggleQtyInputs()">
+                    <option value="custom">ข้อความอิสระ (Custom)</option>
+                    <option value="time">เวลา (Time)</option>
+                    <option value="sets">เซ็ต x ครั้ง (Sets/Reps)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">จำนวน (Quantity)</label>
+                <!-- Dynamic Input Container -->
+                <div id="qty-input-container">
+                    <!-- JS will inject inputs here -->
+                </div>
             </div>
             
             <div class="form-group">
@@ -692,6 +713,39 @@
             container.innerHTML = html;
         }
 
+        // --- Dynamic Qty Input Logic ---
+        function toggleQtyInputs() {
+            const type = document.getElementById('inp-qty-type').value;
+            const container = document.getElementById('qty-input-container');
+            container.innerHTML = '';
+
+            if (type === 'time') {
+                container.innerHTML = `
+                    <div class="qty-dynamic-wrapper">
+                        <input type="number" id="qty-val1" class="form-input" placeholder="ระบุตัวเลข">
+                        <select id="qty-unit-select" class="form-select" style="width: 100px; border:none; background:transparent; font-weight:600; color:#555;">
+                            <option value="นาที">นาที</option>
+                            <option value="วินาที">วินาที</option>
+                        </select>
+                    </div>
+                `;
+            } else if (type === 'sets') {
+                container.innerHTML = `
+                    <div class="qty-dynamic-wrapper">
+                        <input type="number" id="qty-val1" class="form-input" placeholder="จำนวนเซ็ต">
+                        <span class="qty-unit-label">เซ็ต x</span>
+                        <input type="number" id="qty-val2" class="form-input" placeholder="จำนวนครั้ง">
+                        <span class="qty-unit-label">ครั้ง</span>
+                    </div>
+                `;
+            } else {
+                // Custom
+                container.innerHTML = `
+                    <input type="text" id="qty-val1" class="form-input" placeholder="ระบุจำนวนและหน่วยเอง">
+                `;
+            }
+        }
+
         // --- CRUD Modal Logic ---
         function openEditModal(index = null) {
             if(!selectedDate) return alert("กรุณาเลือกวันที่ก่อน");
@@ -699,23 +753,53 @@
             const modal = document.getElementById('edit-modal');
             const idxInput = document.getElementById('edit-index');
             
-            // Clear or Fill
+            // Default Values
+            let item = { time: "", title: "", qty: "", desc: "", media: "" };
             if (index !== null) {
-                const item = trainingDatabase[selectedDate][index];
+                item = trainingDatabase[selectedDate][index];
                 idxInput.value = index;
-                document.getElementById('inp-time').value = item.time;
-                document.getElementById('inp-title').value = item.title;
-                document.getElementById('inp-qty').value = item.qty;
-                document.getElementById('inp-desc').value = item.desc;
-                document.getElementById('inp-media').value = item.media || '';
             } else {
                 idxInput.value = "new";
-                document.getElementById('inp-time').value = "";
-                document.getElementById('inp-title').value = "";
-                document.getElementById('inp-qty').value = "";
-                document.getElementById('inp-desc').value = "";
-                document.getElementById('inp-media').value = "";
             }
+
+            document.getElementById('inp-time').value = item.time;
+            document.getElementById('inp-title').value = item.title;
+            document.getElementById('inp-desc').value = item.desc;
+            document.getElementById('inp-media').value = item.media || '';
+
+            // Parse Qty to fit dynamic inputs
+            const qtyStr = item.qty || "";
+            let type = "custom";
+            let val1 = qtyStr;
+            let val2 = "";
+            let valUnit = "นาที"; // Default for time
+
+            // Try to detect format
+            if (qtyStr.match(/^\d+\s*(นาที|วินาที)$/)) {
+                type = "time";
+                if(qtyStr.includes("นาที")) {
+                    val1 = qtyStr.replace("นาที", "").trim();
+                    valUnit = "นาที";
+                } else {
+                    val1 = qtyStr.replace("วินาที", "").trim();
+                    valUnit = "วินาที";
+                }
+            } else if (qtyStr.match(/^\d+\s*เซ็ต\s*x\s*\d+\s*ครั้ง$/)) {
+                type = "sets";
+                const parts = qtyStr.split('x');
+                val1 = parts[0].replace("เซ็ต", "").trim();
+                val2 = parts[1].replace("ครั้ง", "").trim();
+            }
+
+            document.getElementById('inp-qty-type').value = type;
+            toggleQtyInputs(); // Generate inputs first
+
+            // Fill values after generation
+            setTimeout(() => {
+                if(document.getElementById('qty-val1')) document.getElementById('qty-val1').value = val1;
+                if(document.getElementById('qty-val2')) document.getElementById('qty-val2').value = val2;
+                if(document.getElementById('qty-unit-select')) document.getElementById('qty-unit-select').value = valUnit;
+            }, 0);
             
             modal.style.display = 'flex';
         }
@@ -730,9 +814,25 @@
             const index = document.getElementById('edit-index').value;
             const time = document.getElementById('inp-time').value;
             const title = document.getElementById('inp-title').value;
-            const qty = document.getElementById('inp-qty').value;
             const desc = document.getElementById('inp-desc').value;
             const media = document.getElementById('inp-media').value;
+            
+            // Construct Qty String
+            const qtyType = document.getElementById('inp-qty-type').value;
+            let qty = "";
+            const val1 = document.getElementById('qty-val1') ? document.getElementById('qty-val1').value : "";
+            const val2 = document.getElementById('qty-val2') ? document.getElementById('qty-val2').value : "";
+
+            if (val1) {
+                if (qtyType === 'time') {
+                    const unit = document.getElementById('qty-unit-select').value;
+                    qty = `${val1} ${unit}`;
+                } else if (qtyType === 'sets') {
+                    qty = `${val1} เซ็ต x ${val2} ครั้ง`;
+                } else {
+                    qty = val1;
+                }
+            }
             
             // Auto detect media type
             let type = 'img';
